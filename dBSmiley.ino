@@ -34,6 +34,8 @@
 #include <SmartMatrix3.h>
 #include "gimpbitmap.h"       // To convert the bitmaps
 #include "config.h"
+#include "ButtonHandler.h"
+#include "PinMapping.h"
 
 
 // For Microphone
@@ -48,18 +50,6 @@
 
 
 // Smart Matrix ************************************************************
-#define COLOR_DEPTH               24         // known working: 24, 48 - If the sketch uses type `rgb24` directly, COLOR_DEPTH must be 24
-const uint8_t kMatrixWidth       = 32;       // known working: 16, 32, 48, 64
-const uint8_t kMatrixHeight      = 32;       // known working: 32, 64, 96, 128
-const uint8_t kRefreshDepth      = 36;       // known working: 24, 36, 48
-const uint8_t kDmaBufferRows     = 4;        // known working: 2-4, use 2 to save memory, more to keep from dropping frames and automatically lowering refresh rate
-const uint8_t kPanelType         = SMARTMATRIX_HUB75_32ROW_MOD16SCAN;   // use SMARTMATRIX_HUB75_16ROW_MOD8SCAN for common 16x32 panels
-const uint8_t kMatrixOptions     = (SMARTMATRIX_OPTIONS_NONE);      // see http://docs.pixelmatix.com/SmartMatrix for options
-const uint8_t kBackgroundLayerOptions = (SM_BACKGROUND_OPTIONS_NONE);
-
-const uint8_t kScrollingLayerOptions = (SM_SCROLLING_OPTIONS_NONE);
-const uint8_t kIndexedLayerOptions = (SM_INDEXED_OPTIONS_NONE);
-
 SMARTMATRIX_ALLOCATE_BUFFERS(matrix, kMatrixWidth, kMatrixHeight, kRefreshDepth, kDmaBufferRows, kPanelType, kMatrixOptions);
 SMARTMATRIX_ALLOCATE_BACKGROUND_LAYER(backgroundLayer, kMatrixWidth, kMatrixHeight, COLOR_DEPTH, kBackgroundLayerOptions);
 SMARTMATRIX_ALLOCATE_SCROLLING_LAYER(scrollingLayer, kMatrixWidth, kMatrixHeight, COLOR_DEPTH, kScrollingLayerOptions);
@@ -113,51 +103,58 @@ AudioConnection          patchCord1(adc1, fft1024_1); //created using the Teensy
 
 uint8_t runMeasurement = 0;
 char textBuffer[9];
+uint16_t adcValueLow = 0;
+uint16_t adcValueHigh = 0;
 
 
 void drawBitmap(int16_t x, int16_t y, const gimp32x32bitmap* bitmap);
+float db(float n);
 
 
 void setup() {
-  // put your setup code here, to run once:
    // Initialize Serial Port
    Serial.begin( UART_SPEED );
+   
+   // Initialize Buttons
+   initButton();
+   
    // Initialize state machine
    stm_entryFlag = TRUE;
    stm_exitFlag = FALSE;
    stm_newState = STM_STATE_STARTUP;
 
-   matrix.addLayer(&backgroundLayer); 
-   matrix.addLayer(&scrollingLayer); 
-   matrix.addLayer(&indexedLayer1);
-   matrix.addLayer(&indexedLayer2);
-   matrix.addLayer(&indexedLayer3);
+   matrix.addLayer( &backgroundLayer ); 
+   matrix.addLayer( &scrollingLayer ); 
+   matrix.addLayer( &indexedLayer1 );
+   matrix.addLayer( &indexedLayer2 );
+   matrix.addLayer( &indexedLayer3 );
    matrix.begin();
 
    matrix.setBrightness( BRIGHTNESS );
 
    scrollingLayer.setOffsetFromTop(defaultScrollOffset);
-   backgroundLayer.enableColorCorrection(true); //???
+   backgroundLayer.enableColorCorrection( true ); //???
    
    // Clear Layer
-   indexedLayer1.fillScreen(0);
-   indexedLayer2.fillScreen(0);
-   indexedLayer3.fillScreen(0);
+   indexedLayer1.fillScreen( 0 );
+   indexedLayer2.fillScreen( 0 );
+   indexedLayer3.fillScreen( 0 );
 
-   digitalWrite(LED_PIN, HIGH);   // turn the LED on (HIGH is the voltage level)
+   digitalWrite( LED_PIN, HIGH );   // turn the LED on (HIGH is the voltage level)
 
    AudioMemory( 12 );
   
    dB_int = 0;
    runMeasurement = 0;
 
-   fft1024_1.windowFunction(AudioWindowHanning1024);
+   fft1024_1.windowFunction( AudioWindowHanning1024 );
    Serial.println("Init complete");
 
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+
+   updateButtonHandler();
 
    switch (stm_actState)
    {
@@ -224,6 +221,14 @@ void loop() {
          }
          
          
+         if(getButtonStateEnter())
+         {
+            stm_newState = STM_STATE_DISP_DB;
+            stm_exitFlag = TRUE;
+         }
+         
+         
+         
          if ( dB_int < YELLOW_DB_LEVEL )
          {
             drawBitmap(0,0, (const gimp32x32bitmap*)&greenSmiley);
@@ -245,9 +250,10 @@ void loop() {
       // Exit
          if (stm_exitFlag == TRUE)
          {
-           stm_exitFlag = FALSE;
-           stm_actState = stm_newState;
-           stm_entryFlag = TRUE;
+            clearButtonAllFlags();
+            stm_exitFlag = FALSE;
+            stm_actState = stm_newState;
+            stm_entryFlag = TRUE;
          }
       break;
       
@@ -271,6 +277,14 @@ void loop() {
             
             stm_entryFlag = FALSE;
          }
+         
+         if(getButtonStateEnter())
+         {
+            stm_newState = STM_STATE_DISP_TEXT;
+            stm_exitFlag = TRUE;
+         }
+         
+         
          
          // Clear Background
          backgroundLayer.fillScreen({0,0,0});
@@ -310,9 +324,10 @@ void loop() {
       // Exit
          if (stm_exitFlag == TRUE)
          {
-           stm_exitFlag = FALSE;
-           stm_actState = stm_newState;
-           stm_entryFlag = TRUE;
+            clearButtonAllFlags();
+            stm_exitFlag = FALSE;
+            stm_actState = stm_newState;
+            stm_entryFlag = TRUE;
          }
       break;
       
@@ -347,14 +362,21 @@ void loop() {
          scrollingLayer.setFont(font6x10);
          scrollingLayer.start("ESA will miss you :-(", 1);
          delay ( 5000 );
+         
+         if(getButtonStateEnter())
+         {
+            stm_newState = STM_STATE_DISP_SMILEY;
+            stm_exitFlag = TRUE;
+         }
       
       
       // Exit
          if (stm_exitFlag == TRUE)
          {
-           stm_exitFlag = FALSE;
-           stm_actState = stm_newState;
-           stm_entryFlag = TRUE;
+            clearButtonAllFlags();
+            stm_exitFlag = FALSE;
+            stm_actState = stm_newState;
+            stm_entryFlag = TRUE;
          }
       break;
       
@@ -381,6 +403,8 @@ void loop() {
 
       while((millis() - Starttime) < Sampletime_ms)
       {
+         updateButtonHandler();
+         
          if (fft1024_1.available())
          {
             for (i = 0; i < 511; i++)
@@ -414,7 +438,8 @@ void loop() {
 /// \return    
 /// \todo      
 ///
-float db(float n) {
+float db(float n)
+{
    return log10f(n) * 10.0f + 125; 
 }
 
@@ -426,14 +451,17 @@ float db(float n) {
 /// \return    
 /// \todo      
 ///
-void drawBitmap(int16_t x, int16_t y, const gimp32x32bitmap* bitmap) {
-  for(unsigned int i=0; i < bitmap->height; i++) {
-    for(unsigned int j=0; j < bitmap->width; j++) {
-      SM_RGB pixel = { bitmap->pixel_data[(i*bitmap->width + j)*3 + 0],
-                      bitmap->pixel_data[(i*bitmap->width + j)*3 + 1],
-                      bitmap->pixel_data[(i*bitmap->width + j)*3 + 2] };
+void drawBitmap(int16_t x, int16_t y, const gimp32x32bitmap* bitmap)
+{
+   for(unsigned int i = 0; i < bitmap->height; i++)
+   {
+      for(unsigned int j = 0; j < bitmap->width; j++)
+      {
+         SM_RGB pixel = {  bitmap->pixel_data[(i*bitmap->width + j)*3 + 0],
+                           bitmap->pixel_data[(i*bitmap->width + j)*3 + 1],
+                           bitmap->pixel_data[(i*bitmap->width + j)*3 + 2] };
 
-      backgroundLayer.drawPixel(x + j, y + i, pixel);
-    }
-  }
+         backgroundLayer.drawPixel(x + j, y + i, pixel);
+      }
+   }
 }
