@@ -1,15 +1,15 @@
 // ****************************************************************************
-/// \file      PinMapping.h
+/// \file      Potihandler.h
 ///
-/// \brief     Defines Pins of the Board
+/// \brief     
 ///
-/// \details    
+/// \details   
 ///
 /// \author    Christoph Capiaghi
 ///
 /// \version   0.1
 ///
-/// \date      20180120
+/// \date      20180124
 /// 
 /// \copyright Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -26,11 +26,15 @@
 ///
 
 // Define to prevent recursive inclusion
-#ifndef __PINMAPPING_H__
-#define __PINMAPPING_H__
+#ifndef __POTIHANDLER_H__
+#define __POTIHANDLER_H__
 
 // Include ********************************************************************
 #include "Arduino.h"
+#include "PinMapping.h"
+#include "config.h"
+#include <ADC.h>
+
 // Exported types *************************************************************
 /// \brief     Optional description
 /// \details   Optional description (more detailed)
@@ -39,21 +43,10 @@
 // Exported constants *********************************************************
 
 // Exported macros ************************************************************
-// Mapping according "pins_arduino.h"
-
-// Buttons TBD
-#define BUTTON_ENTER_PIN              	   ( 1 )    // Enter
-#define LED_PIN                           ( 13 )   // On Board LED
-
-//  If you want to use AudioInputAnalog and the ADC you have to use the ADC_1 module,
-// the Audio library uses ADC_0. Any calls to functions that use ADC_0 will most likely crash the program. 
-#define UPPER_POTI_PIN                    ( A3 )   // use ADC1
-#define LOWER_POTI_PIN                    ( A2 )   // use ADC1
-
-const int MicrophonePin = A1; // use ADC0
-
-
 
 // Exported functions *********************************************************
+void        initPotis();
+uint32_t    readLowerPoti();
+uint32_t    readUpperPoti();
 
 #endif

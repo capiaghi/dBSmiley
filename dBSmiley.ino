@@ -35,6 +35,7 @@
 #include "gimpbitmap.h"       // To convert the bitmaps
 #include "config.h"
 #include "ButtonHandler.h"
+#include "Potihandler.h"
 #include "PinMapping.h"
 
 
@@ -94,21 +95,42 @@ unsigned long Sampletime_ms = 1000;
 unsigned long Starttime;
 int l = 0;
 
-AudioInputAnalog         adc1(A1);           //xy=155,82
-AudioAnalyzeFFT1024      fft1024_1;      //xy=348,95
+AudioInputAnalog         adc1(A1);        //xy=155,82
+AudioAnalyzeFFT1024      fft1024_1;       //xy=348,95
 AudioConnection          patchCord1(adc1, fft1024_1); //created using the Teensy Audio design GUI
-
-
 
 
 uint8_t runMeasurement = 0;
 char textBuffer[9];
-uint16_t adcValueLow = 0;
-uint16_t adcValueHigh = 0;
+
+
+uint8_t yellow_dB_level = 0;
+uint8_t red_dB_level = 0;
+
+// Create an IntervalTimer object 
+// https://www.pjrc.com/teensy/td_timing_IntervalTimer.html
+IntervalTimer secondsTimer;
+
 
 
 void drawBitmap(int16_t x, int16_t y, const gimp32x32bitmap* bitmap);
 float db(float n);
+void clearScreen();
+
+
+volatile uint8_t seconds = 0;
+uint8_t secondsCopy = 0;
+
+void countSeconds()
+{
+   seconds++;
+   #ifdef DEBUG
+      Serial.print("Seconds: ");
+      Serial.print(seconds);
+      Serial.println(" s");
+   #endif
+
+}
 
 
 void setup() {
@@ -117,6 +139,9 @@ void setup() {
    
    // Initialize Buttons
    initButton();
+   
+   // Initialize Potentiometers
+   initPotis();
    
    // Initialize state machine
    stm_entryFlag = TRUE;
@@ -140,6 +165,7 @@ void setup() {
    indexedLayer2.fillScreen( 0 );
    indexedLayer3.fillScreen( 0 );
 
+   pinMode(LED_PIN, OUTPUT);
    digitalWrite( LED_PIN, HIGH );   // turn the LED on (HIGH is the voltage level)
 
    AudioMemory( 12 );
@@ -148,14 +174,36 @@ void setup() {
    runMeasurement = 0;
 
    fft1024_1.windowFunction( AudioWindowHanning1024 );
+   
+   seconds = 0;
+   secondsTimer.begin(countSeconds, 1000000); // 1 second
+   
    Serial.println("Init complete");
+   
 
 }
 
 void loop() {
 
    updateButtonHandler();
+   
+   // to read a variable which the interrupt code writes, we
+   // must temporarily disable interrupts, to be sure it will
+   // not change while we are reading.  To minimize the time
+   // with interrupts off, just quickly make a copy, and then
+   // use the copy while allowing the interrupt to keep working.
+   noInterrupts();
+   secondsCopy = seconds;
+   interrupts();
+   
+   
+   // Map ADC value to dB values
+   
+   yellow_dB_level = map(readLowerPoti(), ADC_MIN_VALUE, ADC_MAX_VALUE, MIN_LOW_LEVEL, MAX_LOW_LEVEL);
+   red_dB_level = yellow_dB_level + map(readUpperPoti(), ADC_MIN_VALUE, ADC_MAX_VALUE_2, MIN_DB_OFFSET, MAX_DB_OFFSET);
+   
 
+   
    switch (stm_actState)
    {
       //==============================================================================
@@ -173,6 +221,7 @@ void loop() {
             #ifdef DEBUG
                Serial.println(F("Entered STM_STATE_STARTUP"));
             #endif
+            
               
             Serial.println("dB Smiley");
             Serial.print("Software Version: ");
@@ -192,6 +241,7 @@ void loop() {
          // Exit
          if (stm_exitFlag == TRUE)
          {
+           clearScreen();
            stm_exitFlag = FALSE;
            stm_actState = stm_newState;
            stm_entryFlag = TRUE;
@@ -226,15 +276,22 @@ void loop() {
             stm_newState = STM_STATE_DISP_DB;
             stm_exitFlag = TRUE;
          }
+            
+         #ifdef DEBUG
+            Serial.print(F("yellow_dB_level : "));
+            Serial.println(yellow_dB_level);
+            Serial.print(F("red_dB_level : "));
+            Serial.println(red_dB_level);
+         #endif
          
          
          
-         if ( dB_int < YELLOW_DB_LEVEL )
+         if ( dB_int < yellow_dB_level )
          {
             drawBitmap(0,0, (const gimp32x32bitmap*)&greenSmiley);
             
          }
-         else if ( dB_int < RED_DB_LEVEL )
+         else if ( dB_int < red_dB_level )
          {
             drawBitmap(0,0, (const gimp32x32bitmap*)&yellowSmiley);
       
@@ -251,6 +308,7 @@ void loop() {
          if (stm_exitFlag == TRUE)
          {
             clearButtonAllFlags();
+            clearScreen();
             stm_exitFlag = FALSE;
             stm_actState = stm_newState;
             stm_entryFlag = TRUE;
@@ -285,18 +343,15 @@ void loop() {
          }
          
          
-         
-         // Clear Background
-         backgroundLayer.fillScreen({0,0,0});
-         backgroundLayer.swapBuffers();
+        
          // Max value (Layer 1)
   
          indexedLayer1.fillScreen(0); // clear text
-         sprintf(textBuffer, "%d dB", 90);
+         sprintf(textBuffer, "%d dB", red_dB_level);
          // draw color box to indexed layer 
          indexedLayer1.setIndexedColor(1, {0xFF, 0x00, 0x00});
          indexedLayer1.setFont(font5x7);
-         indexedLayer1.drawString(5, 6, 1, textBuffer);
+         indexedLayer1.drawString(TEXT_OFFSET_LEFT_DB, 5, 1, textBuffer);
          indexedLayer1.swapBuffers();
          
          
@@ -306,17 +361,17 @@ void loop() {
          // draw color box to indexed layer
          indexedLayer2.setIndexedColor(1, {0, 0xFF, 0x00});
          indexedLayer2.setFont(font5x7);
-         indexedLayer2.drawString(5, 14, 1, textBuffer);
+         indexedLayer2.drawString(TEXT_OFFSET_LEFT_DB, 13, 1, textBuffer);
          indexedLayer2.swapBuffers();
          
          // Current value (Layer 3)
 
          // Neu
          indexedLayer3.fillScreen(0); // clear text
-         sprintf(textBuffer, "%d dB", 60);
+         sprintf(textBuffer, "%d dB", yellow_dB_level);
          indexedLayer3.setIndexedColor(1, {0x00, 0x00, 0xFF});
          indexedLayer3.setFont(font5x7);
-         indexedLayer3.drawString(5, kMatrixHeight-10, 1, textBuffer);
+         indexedLayer3.drawString(TEXT_OFFSET_LEFT_DB, kMatrixHeight-11, 1, textBuffer);
          indexedLayer3.swapBuffers();
          
       
@@ -325,6 +380,7 @@ void loop() {
          if (stm_exitFlag == TRUE)
          {
             clearButtonAllFlags();
+            clearScreen();
             stm_exitFlag = FALSE;
             stm_actState = stm_newState;
             stm_entryFlag = TRUE;
@@ -346,22 +402,49 @@ void loop() {
             #ifdef DEBUG
                Serial.println(F("STM_STATE_DISP_TEXT"));
             #endif
+            
+            noInterrupts();
+            seconds = 0;
+            secondsCopy = 0;
+            interrupts();
+            
+            
             runMeasurement = 0;
             
             stm_entryFlag = FALSE;
          }
          
+         
+
          drawBitmap(0,0, (const gimp32x32bitmap*)&ntb);
          backgroundLayer.swapBuffers();
-         // "SmartMatrix Demo"
+         // Display message
          scrollingLayer.setOffsetFromTop( 11 );
 
          scrollingLayer.setColor({0xff, 0xff, 0xff});
          scrollingLayer.setMode(wrapForward);
          scrollingLayer.setSpeed(30);
          scrollingLayer.setFont(font6x10);
-         scrollingLayer.start("ESA will miss you :-(", 1);
-         delay ( 5000 );
+         scrollingLayer.start("ESA will miss you :-)", 1);
+         
+
+         
+         
+         // Wait and make sure, that we didn't miss the button
+         while( secondsCopy < DELAY_TEXT_DISP_S )
+         {
+            noInterrupts();
+            secondsCopy = seconds;
+            interrupts();
+            updateButtonHandler();
+         }
+         
+         noInterrupts();
+         seconds = 0;
+         secondsCopy = 0;
+         interrupts();
+
+         
          
          if(getButtonStateEnter())
          {
@@ -374,6 +457,8 @@ void loop() {
          if (stm_exitFlag == TRUE)
          {
             clearButtonAllFlags();
+            clearScreen();
+            
             stm_exitFlag = FALSE;
             stm_actState = stm_newState;
             stm_entryFlag = TRUE;
@@ -415,15 +500,21 @@ void loop() {
                v[i] = 0.001953125 * pow(v[i],2); // 1/512 samples = .0019....
                magnitude = v[i] + magnitude;
             }
+            
+            Serial.println(magnitude, 10);
             magnitude = db(magnitude);
             dB_holder = dB_holder + magnitude;
             magnitude = 0;
             ++l; 
          }
       }
-      dB_holder=dB_holder / l * CALIBRATION_FACTOR_MIC;
+      dB_holder = dB_holder / l * CALIBRATION_FACTOR_MIC;
       dB_int = (int) dB_holder;
-      Serial.println( dB_int );
+      #ifdef DEBUG
+         Serial.print("Actual dB: ");
+         Serial.println( dB_int );
+      #endif
+
       l = 0;
    }
 }
@@ -464,4 +555,18 @@ void drawBitmap(int16_t x, int16_t y, const gimp32x32bitmap* bitmap)
          backgroundLayer.drawPixel(x + j, y + i, pixel);
       }
    }
+}
+
+void clearScreen()
+{
+   // Clear Background
+   backgroundLayer.fillScreen({0,0,0});
+   backgroundLayer.swapBuffers();
+   
+   indexedLayer1.fillScreen( 0 );
+   indexedLayer2.fillScreen( 0 );
+   indexedLayer3.fillScreen( 0 );
+   indexedLayer1.swapBuffers();
+   indexedLayer2.swapBuffers();
+   indexedLayer3.swapBuffers();
 }
