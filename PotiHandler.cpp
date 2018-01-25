@@ -83,9 +83,7 @@ void initPotis()
 uint32_t readUpperPoti()
 {
    upperPoti = adc->adc1->analogRead(UPPER_POTI_PIN); // read a new value, will return ADC_ERROR_VALUE if the comparison is false.
-   
-      
-  
+
    #ifdef DEBUG
       Serial.print(F("Upper Poti ADC: "));
       Serial.println(upperPoti); 

@@ -38,7 +38,7 @@
 /// \details   Optional description (more detailed)
 
 
-//#define     DEBUG                      ( 1 ) // Serial Debug enable
+#define     DEBUG                      ( 1 ) // Serial Debug enable
 #define     BRIGHTNESS                 ( 255 )
 #define     UART_SPEED                 ( 115200 )
 
@@ -60,7 +60,7 @@ const float       ADCCONST              = (ADC_REF_VOLTAGE / ADC_MAX_VALUE);
 // Values for mapping the ADC values
 const uint8_t     MIN_LOW_LEVEL         = 50;   // dB
 const uint8_t     MAX_LOW_LEVEL         = 130;  // dB
-const uint8_t     MIN_DB_OFFSET         = 10;   // dB
+const uint8_t     MIN_DB_OFFSET         = 5;    // dB
 const uint8_t     MAX_DB_OFFSET         = 30;   // dB
 
 
@@ -89,7 +89,7 @@ const uint8_t kScrollingLayerOptions   = (SM_SCROLLING_OPTIONS_NONE);
 const uint8_t kIndexedLayerOptions     = (SM_INDEXED_OPTIONS_NONE);
 
 // Microphone *************************************************************
-const float   CALIBRATION_FACTOR_MIC = 1.0;
+const float   CALIBRATION_FACTOR_MIC = 0.8;
 const int     defaultScrollOffset    = 0;
 
 
